@@ -26,6 +26,7 @@ namespace Microsoft.KeyVault
             log.LogInformation("C# Http trigger function processed a request.");
             SecretRotator.RotateSecret(log,secretName ,keyVaultName);
 
+
             return new OkObjectResult($"Secret Rotated Successfully");
         }
     }
