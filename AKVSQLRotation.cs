@@ -12,6 +12,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
 
 namespace Microsoft.KeyVault
 {
@@ -23,25 +24,57 @@ namespace Microsoft.KeyVault
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
             ILogger log)
         {
-            log.LogInformation("C# Event trigger function processed a request.");
-
-            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-            var eventGridEvents = JsonConvert.DeserializeObject<JArray>(requestBody);
-
-            foreach (var eventGridEvent in eventGridEvents)
+            try
             {
-                var secretName = eventGridEvent["subject"]?.ToString();
-                var secretVersion = Regex.Match(eventGridEvent["data"]?.ToString() ?? "", "Version\":\"([a-z0-9]*)").Groups[1].ToString();
-                var keyVaultName = Regex.Match(eventGridEvent["topic"]?.ToString() ?? "", ".vaults.(.*)").Groups[1].ToString();
-                
-                log.LogInformation($"Key Vault Name: {keyVaultName}");
-                log.LogInformation($"Secret Name: {secretName}");
-                log.LogInformation($"Secret Version: {secretVersion}");
+                log.LogInformation("C# HTTP trigger function processed a request.");
 
-                SecretRotator.RotateSecret(log, secretName, keyVaultName);
+                string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+                log.LogInformation($"Request body: {requestBody}");
+
+                if (string.IsNullOrEmpty(requestBody))
+                {
+                    return new BadRequestObjectResult("Request body is empty");
+                }
+
+                var eventGridEvents = JsonConvert.DeserializeObject<JArray>(requestBody);
+                if (eventGridEvents == null || eventGridEvents.Count == 0)
+                {
+                    return new BadRequestObjectResult("No events found in request");
+                }
+
+                foreach (var eventGridEvent in eventGridEvents)
+                {
+                    try
+                    {
+                        var secretName = eventGridEvent["subject"]?.ToString();
+                        var secretVersion = Regex.Match(eventGridEvent["data"]?.ToString() ?? "", "Version\":\"([a-z0-9]*)").Groups[1].ToString();
+                        var keyVaultName = Regex.Match(eventGridEvent["topic"]?.ToString() ?? "", ".vaults.(.*)").Groups[1].ToString();
+                        
+                        log.LogInformation($"Processing event - Key Vault: {keyVaultName}, Secret: {secretName}, Version: {secretVersion}");
+
+                        if (string.IsNullOrEmpty(keyVaultName) || string.IsNullOrEmpty(secretName))
+                        {
+                            log.LogWarning("Skipping event - missing Key Vault name or secret name");
+                            continue;
+                        }
+
+                        SecretRotator.RotateSecret(log, secretName, keyVaultName);
+                        log.LogInformation($"Successfully processed rotation for secret: {secretName}");
+                    }
+                    catch (Exception eventEx)
+                    {
+                        log.LogError(eventEx, $"Error processing individual event: {eventEx.Message}");
+                        // Continue processing other events
+                    }
+                }
+
+                return new OkObjectResult("Rotation completed successfully");
             }
-
-            return new OkResult();
+            catch (Exception ex)
+            {
+                log.LogError(ex, $"Fatal error in function execution: {ex.Message}");
+                return new StatusCodeResult(500);
+            }
         }
     }
 }
