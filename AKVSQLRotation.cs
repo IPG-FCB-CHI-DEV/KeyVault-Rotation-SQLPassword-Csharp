@@ -3,7 +3,7 @@
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
-using Azure.Messaging.EventGrid;
+using Microsoft.Azure.EventGrid.Models;
 using Microsoft.Azure.WebJobs.Extensions.EventGrid;
 using Microsoft.Azure.WebJobs;
 using System.Text.RegularExpressions;
