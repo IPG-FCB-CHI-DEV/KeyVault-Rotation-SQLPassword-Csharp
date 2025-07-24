@@ -4,6 +4,7 @@ using System;
 using Microsoft.Extensions.Logging;
 using Azure.Identity;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 
 namespace Microsoft.KeyVault
@@ -17,6 +18,20 @@ namespace Microsoft.KeyVault
 
 		public static void RotateSecret(ILogger log, string secretName, string keyVaultName)
         {
+            // Input validation
+            if (string.IsNullOrWhiteSpace(secretName))
+                throw new ArgumentException("Secret name cannot be null or empty", nameof(secretName));
+            if (string.IsNullOrWhiteSpace(keyVaultName))
+                throw new ArgumentException("Key Vault name cannot be null or empty", nameof(keyVaultName));
+            
+            // Validate Key Vault name format (only alphanumeric and hyphens)
+            if (!Regex.IsMatch(keyVaultName, @"^[a-zA-Z0-9\-]+$"))
+                throw new ArgumentException("Key Vault name contains invalid characters", nameof(keyVaultName));
+            
+            // Validate secret name format (Azure Key Vault naming rules)
+            if (!Regex.IsMatch(secretName, @"^[a-zA-Z0-9\-]+$"))
+                throw new ArgumentException("Secret name contains invalid characters", nameof(secretName));
+
             //Retrieve Current Secret
             var kvUri = "https://" + keyVaultName + ".vault.azure.net";
             var client = new SecretClient(new Uri(kvUri), new DefaultAzureCredential());
@@ -69,6 +84,21 @@ namespace Microsoft.KeyVault
             var datasource = secret.Properties.Tags.ContainsKey(ProviderAddressTag) ? secret.Properties.Tags[ProviderAddressTag] : "";
             var dbResourceId = secret.Properties.Tags.ContainsKey(ProviderAddressTag) ? secret.Properties.Tags[ProviderAddressTag] : "";
             
+            // Input validation to prevent SQL injection
+            if (string.IsNullOrWhiteSpace(userId))
+                throw new ArgumentException("User ID cannot be null or empty");
+            if (string.IsNullOrWhiteSpace(newpassword))
+                throw new ArgumentException("New password cannot be null or empty");
+            
+            // Validate userId format - SQL Server login names can contain alphanumeric, underscore, and some special chars
+            // but must start with a letter, underscore, or @ symbol
+            if (!Regex.IsMatch(userId, @"^[a-zA-Z_@][a-zA-Z0-9_@#$]*$"))
+                throw new ArgumentException("User ID contains invalid characters or format");
+            
+            // Additional length validation
+            if (userId.Length > 128) // SQL Server max login name length
+                throw new ArgumentException("User ID exceeds maximum length");
+            
             var dbName = dbResourceId.Split('/')[8];
             var password = secret.Value;
             
@@ -77,13 +107,18 @@ namespace Microsoft.KeyVault
             builder.UserID = userId;
             builder.Password = password;
     
-            //Update password
+            //Update password using parameterized query to prevent SQL injection
             using (SqlConnection connection = new SqlConnection(builder.ConnectionString))
             {
                 connection.Open();
 
-                using (SqlCommand command = new SqlCommand($"ALTER LOGIN {userId} WITH Password='{newpassword}';", connection))
+                // Use parameterized query instead of string concatenation
+                // Note: For ALTER LOGIN, we need to use dynamic SQL with quoted identifier
+                // but we'll validate the userId format strictly above
+                string sql = $"ALTER LOGIN [{userId}] WITH Password = @newPassword";
+                using (SqlCommand command = new SqlCommand(sql, connection))
                 {
+                    command.Parameters.AddWithValue("@newPassword", newpassword);
                     command.ExecuteNonQuery();
                 }
             }
@@ -94,14 +129,29 @@ namespace Microsoft.KeyVault
             const int length = 60;
             
             byte[] randomBytes = new byte[length];
-		    RNGCryptoServiceProvider rngCrypt = new RNGCryptoServiceProvider();
-		    rngCrypt.GetBytes(randomBytes);
-		    return Convert.ToBase64String(randomBytes);
+            using (var rng = RandomNumberGenerator.Create())
+            {
+                rng.GetBytes(randomBytes);
+            }
+            return Convert.ToBase64String(randomBytes);
         }
          private static void CheckServiceConnection(KeyVaultSecret secret)
         {
             var userId = secret.Properties.Tags.ContainsKey(CredentialIdTag) ? secret.Properties.Tags[CredentialIdTag] : "";
             var dbResourceId = secret.Properties.Tags.ContainsKey(ProviderAddressTag) ? secret.Properties.Tags[ProviderAddressTag] : "";
+            
+            // Input validation for service connection
+            if (string.IsNullOrWhiteSpace(userId))
+                throw new ArgumentException("User ID cannot be null or empty for service connection");
+            if (string.IsNullOrWhiteSpace(dbResourceId))
+                throw new ArgumentException("Database resource ID cannot be null or empty");
+            
+            // Validate userId format - same as in UpdateServicePassword
+            if (!Regex.IsMatch(userId, @"^[a-zA-Z_@][a-zA-Z0-9_@#$]*$"))
+                throw new ArgumentException("User ID contains invalid characters or format for service connection");
+            
+            if (userId.Length > 128)
+                throw new ArgumentException("User ID exceeds maximum length for service connection");
             
             var dbName = dbResourceId.Split('/')[8];
             var password = secret.Value;
