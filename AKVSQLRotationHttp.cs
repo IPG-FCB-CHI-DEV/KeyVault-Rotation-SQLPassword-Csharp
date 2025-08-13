@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 
 using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.AspNetCore.Http;
+using System.Threading.Tasks;
 
 
 namespace Microsoft.KeyVault
@@ -11,9 +12,9 @@ namespace Microsoft.KeyVault
     public static class AKVSQLRotationHttp
     {
         [FunctionName("AKVSQLRotationHttp")]
-        public static IActionResult Run(
-			[HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
-			ILogger log)
+        public static async Task<IActionResult> Run(
+   [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+   ILogger log)
         {
             string keyVaultName =  req.Query["KeyVaultName"];
             string secretName = req.Query["SecretName"];
@@ -24,7 +25,7 @@ namespace Microsoft.KeyVault
             log.LogInformation(req.ToString());
 
             log.LogInformation("C# Http trigger function processed a request.");
-            SecretRotator.RotateSecret(log,secretName ,keyVaultName);
+            await SecretRotator.RotateSecret(log,secretName ,keyVaultName);
 
 
             return new OkObjectResult($"Secret Rotated Successfully");

@@ -17,6 +17,17 @@ There are two available functions performing same rotation:
 
 Functions are using Function App identity to access Key Vault and existing secret "CredentialId" tag with sql admin login and value with sql admin password to access SQL server.
 
+## App Service Environment Variable Update
+
+The function now also supports updating Azure App Service environment variables with connection strings. To enable this feature, add the following tags to your secret:
+
+- $secret.Tags["webapp[0]"] - Name of the App Service (e.g., "AppService001")
+- $secret.Tags["connstring[0]"] - Name of the connection string environment variable (e.g., "ConnectionStrings__umbracoDbDSN")
+- $secret.Tags["webapp[1]"] - Name of another App Service (e.g., "AppService002")
+- $secret.Tags["connstring[1]"] - Name of another connection string environment variable (e.g., "ConnectionString")
+
+The function will automatically update the password in the connection strings for each specified App Service.
+
 ## Rotation Setup - ARM Templates
 
 There are 3 ARM templates available

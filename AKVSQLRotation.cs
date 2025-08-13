@@ -58,7 +58,7 @@ namespace Microsoft.KeyVault
                             continue;
                         }
 
-                        SecretRotator.RotateSecret(log, secretName, keyVaultName);
+                        await SecretRotator.RotateSecret(log, secretName, keyVaultName);
                         log.LogInformation($"Successfully processed rotation for secret: {secretName}");
                     }
                     catch (Exception eventEx)
